@@ -223,234 +223,109 @@ st.markdown("""
     .stApp > header {display: none;}
 </style>
 """, unsafe_allow_html=True)
-
-# TMDBPredictiveAnalyzer Class (enhanced version)
 class TMDBPredictiveAnalyzer:
-    """
-    Professional TMDB Movie Revenue Prediction and Analysis System
-    
-    This class provides comprehensive movie revenue prediction capabilities using
-    an ensemble machine learning approach combining Random Forest, XGBoost, and LightGBM.
-    
-    Features:
-    - Revenue prediction with confidence intervals
-    - ROI analysis and risk assessment
-    - Release timing optimization
-    - Scenario modeling and sensitivity analysis
-    - Market comparisons and benchmarking
-    """
-    
     def __init__(self, model_path=None):
-        """Initialize the analyzer with optional model loading."""
         self.model = None
         self.preprocessor = None
-        self.feature_names = None
+        self.feature_names = []
         self.model_metadata = {}
-        
+
         if model_path and os.path.exists(model_path):
             self.load_model(model_path)
 
-    def predict_revenue(self, budget, runtime, vote_average, release_month, primary_genre, 
-                       vote_count=1000, release_year=2024):
-        """
-        Predict movie revenue using the trained ensemble model.
-        
-        Args:
-            budget (float): Production budget in USD
-            runtime (int): Movie runtime in minutes
-            vote_average (float): Expected TMDB rating (1-10)
-            release_month (int): Release month (1-12)
-            primary_genre (str): Primary genre classification
-            vote_count (int): Expected number of votes
-            release_year (int): Release year
-            
-        Returns:
-            float: Predicted revenue in USD
-            
-        Raises:
-            ValueError: If model is not loaded or trained
-        """
-        if not self.model:
-            raise ValueError("Model not trained or loaded")
+    def load_model(self, path):
+        loaded = joblib.load(path)
 
-        input_data = self._prepare_input(
-            budget, runtime, vote_average, release_month, 
-            primary_genre, vote_count, release_year
-        )
-        pred_log = self.model.predict(input_data)
-        return np.expm1(pred_log[0])
+        self.model = loaded.get("model")
+        self.preprocessor = loaded.get("preprocessor")
 
-    def analyze_roi(self, budget, runtime, vote_average, release_month, primary_genre,
-                   vote_count=1000, release_year=2024):
-        """
-        Comprehensive ROI analysis with risk assessment.
-        
-        Returns:
-            dict: ROI analysis with financial metrics and risk levels
-        """
-        predicted_revenue = self.predict_revenue(
-            budget, runtime, vote_average, release_month,
-            primary_genre, vote_count, release_year
-        )
-        
-        roi = (predicted_revenue - budget) / budget * 100
-        profit_margin = (predicted_revenue - budget) / predicted_revenue * 100
-        
-        # Advanced risk assessment
-        risk_factors = self._assess_risk_factors(
-            budget, runtime, vote_average, release_month, primary_genre, vote_count
-        )
-        
-        return {
-            'predicted_revenue': predicted_revenue,
-            'investment': budget,
-            'profit': predicted_revenue - budget,
-            'roi_percentage': roi,
-            'profit_margin': profit_margin,
-            'risk_level': 'Low' if roi > 50 else 'Medium' if roi > 0 else 'High',
-            'risk_factors': risk_factors,
-            'breakeven_multiplier': predicted_revenue / budget,
-            'confidence_score': self._calculate_confidence(vote_average, vote_count)
-        }
+        # SAFETY: feature_names MUST exist
+        self.feature_names = loaded.get("feature_names", [])
 
-    def _assess_risk_factors(self, budget, runtime, vote_average, release_month, primary_genre, vote_count):
-        """Assess various risk factors for the movie investment."""
-        risk_factors = []
-        
-        if budget > 150_000_000:
-            risk_factors.append("High Budget Investment")
-        if vote_average < 6.0:
-            risk_factors.append("Below Average Rating Expectation")
-        if vote_count < 500:
-            risk_factors.append("Limited Audience Interest")
-        if runtime > 180:
-            risk_factors.append("Extended Runtime")
-        if release_month in [1, 2, 9, 10]:
-            risk_factors.append("Non-Peak Release Window")
-        if primary_genre in ['Horror', 'Documentary']:
-            risk_factors.append("Niche Market Genre")
-            
-        return risk_factors
+        if not self.feature_names:
+            raise ValueError("Model feature_names missing. Cannot safely predict.")
 
-    def _calculate_confidence(self, vote_average, vote_count):
-        """Calculate prediction confidence based on input parameters."""
-        # Simple confidence calculation based on vote metrics
-        rating_confidence = min(vote_average / 10, 1.0)
-        popularity_confidence = min(vote_count / 5000, 1.0)
-        return (rating_confidence + popularity_confidence) / 2 * 100
-
-    def optimize_release_timing(self, budget, runtime, vote_average, primary_genre,
-                               vote_count=1000, release_year=2024):
-        """Optimize release timing for maximum ROI."""
-        monthly_analysis = {}
-        
-        for month in range(1, 13):
-            analysis = self.analyze_roi(
-                budget, runtime, vote_average, month, primary_genre,
-                vote_count, release_year
-            )
-            monthly_analysis[month] = {
-                'roi': analysis['roi_percentage'],
-                'revenue': analysis['predicted_revenue'],
-                'risk_level': analysis['risk_level']
-            }
-
-        best_month = max(monthly_analysis, key=lambda x: monthly_analysis[x]['roi'])
-        
-        return {
-            'best_month': best_month,
-            'best_roi': monthly_analysis[best_month]['roi'],
-            'monthly_analysis': monthly_analysis,
-            'seasonal_insights': self._get_seasonal_insights(monthly_analysis)
-        }
-
-    def _get_seasonal_insights(self, monthly_analysis):
-        """Generate seasonal insights from monthly analysis."""
-        seasons = {
-            'Winter': [12, 1, 2],
-            'Spring': [3, 4, 5], 
-            'Summer': [6, 7, 8],
-            'Fall': [9, 10, 11]
-        }
-        
-        seasonal_avg = {}
-        for season, months in seasons.items():
-            avg_roi = np.mean([monthly_analysis[month]['roi'] for month in months])
-            seasonal_avg[season] = avg_roi
-            
-        best_season = max(seasonal_avg, key=seasonal_avg.get)
-        return {
-            'best_season': best_season,
-            'seasonal_averages': seasonal_avg
-        }
-
-    def scenario_analysis(self, base_params, scenarios):
-        """Perform comprehensive scenario analysis."""
-        results = {}
-        
-        for scenario_name, adjustments in scenarios.items():
-            modified_params = base_params.copy()
-            
-            # Apply adjustments
-            for param, adjustment in adjustments.items():
-                if param in modified_params:
-                    if isinstance(adjustment, dict) and 'multiply' in adjustment:
-                        modified_params[param] *= adjustment['multiply']
-                    elif isinstance(adjustment, dict) and 'add' in adjustment:
-                        modified_params[param] += adjustment['add']
-                    else:
-                        modified_params[param] = adjustment
-            
-            # Get analysis for this scenario
-            analysis = self.analyze_roi(**modified_params)
-            results[scenario_name] = analysis
-            
-        return results
-
-    def _prepare_input(self, budget, runtime, vote_average, release_month, primary_genre,
-                      vote_count, release_year):
-        """Prepare input data for model prediction."""
-        input_data = pd.DataFrame({
-            'budget': [budget],
-            'runtime': [runtime],
-            'vote_average': [vote_average],
-            'vote_count': [vote_count],
-            'release_year': [release_year],
-            'release_month': [release_month],
-            'primary_genre': [primary_genre]
+        self.model_metadata = loaded.get("metadata", {
+            "version": "2.0",
+            "accuracy": 0.884,
+            "features_count": len(self.feature_names)
         })
+
+    def _prepare_input(
+        self,
+        budget,
+        runtime,
+        vote_average,
+        release_month,
+        primary_genre,
+        vote_count,
+        release_year
+    ):
+        # FORCE numeric safety
+        data = {
+            "budget": float(budget),
+            "runtime": int(runtime),
+            "vote_average": float(vote_average),
+            "vote_count": int(vote_count),
+            "release_year": int(release_year),
+            "release_month": int(release_month),
+        }
+
+        df = pd.DataFrame([data])
 
         # Feature engineering
-        input_data['budget_log'] = np.log1p(input_data['budget'])
-        input_data['vote_score'] = input_data['vote_average'] * input_data['vote_count']
-        input_data['is_summer_release'] = input_data['release_month'].isin([5,6,7,8]).astype(int)
-        input_data['is_holiday_release'] = input_data['release_month'].isin([11,12]).astype(int)
-        input_data['release_quarter'] = input_data['release_month'].apply(lambda x: (x-1)//3 + 1)
+        df["budget_log"] = np.log1p(df["budget"])
+        df["vote_score"] = df["vote_average"] * df["vote_count"]
+        df["is_summer_release"] = df["release_month"].isin([5, 6, 7, 8]).astype(int)
+        df["is_holiday_release"] = df["release_month"].isin([11, 12]).astype(int)
+        df["release_quarter"] = ((df["release_month"] - 1) // 3 + 1).astype(int)
 
-        # Add missing columns with defaults
-        for col in self.feature_names:
-            if col not in input_data.columns:
-                if col.startswith('genre_'):
-                    input_data[col] = 1 if col == f'genre_{primary_genre}' else 0
-                else:
-                    input_data[col] = 0
+        # Initialize ALL expected features safely
+        final_df = pd.DataFrame(columns=self.feature_names)
+        final_df.loc[0] = 0.0  # ZERO-FILL EVERYTHING
 
-        return input_data[self.feature_names]
+        # Populate numeric features
+        for col in df.columns:
+            if col in final_df.columns:
+                final_df[col] = df[col].astype(float)
 
-    def load_model(self, path):
-        """Load the trained model and metadata."""
-        loaded = joblib.load(path)
-        self.model = loaded['model']
-        self.preprocessor = loaded['preprocessor'] 
-        self.feature_names = loaded['feature_names']
-        
-        # Extract model metadata if available
-        self.model_metadata = loaded.get('metadata', {
-            'version': '2.0',
-            'accuracy': 0.884,
-            'training_date': 'N/A',
-            'features_count': len(self.feature_names) if self.feature_names else 0
-        })
+        # One-hot genre safely
+        genre_col = f"genre_{primary_genre}"
+        if genre_col in final_df.columns:
+            final_df[genre_col] = 1.0
+
+        # ABSOLUTE SAFETY CHECK
+        final_df = final_df.astype(float)
+        final_df = final_df.fillna(0.0)
+
+        return final_df[self.feature_names]
+
+    def predict_revenue(self, **kwargs):
+        if self.model is None:
+            raise ValueError("Model not loaded")
+
+        X = self._prepare_input(**kwargs)
+        pred_log = self.model.predict(X)
+        return float(np.expm1(pred_log[0]))
+
+    def analyze_roi(self, **kwargs):
+        revenue = self.predict_revenue(**kwargs)
+        budget = float(kwargs["budget"])
+
+        roi = (revenue - budget) / budget * 100
+        profit = revenue - budget
+
+        return {
+            "predicted_revenue": revenue,
+            "investment": budget,
+            "profit": profit,
+            "roi_percentage": roi,
+            "profit_margin": (profit / revenue) * 100 if revenue > 0 else 0,
+            "risk_level": "Low" if roi > 50 else "Medium" if roi > 0 else "High",
+            "risk_factors": [],
+            "breakeven_multiplier": revenue / budget if budget > 0 else 0,
+            "confidence_score": min(100, (kwargs["vote_average"] / 10) * 100),
+        }
 
 # Caching for performance
 @st.cache_resource
