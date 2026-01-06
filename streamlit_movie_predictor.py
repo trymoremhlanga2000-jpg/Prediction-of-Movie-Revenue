@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,24 +11,32 @@ from datetime import datetime
 import math
 warnings.filterwarnings('ignore')
 
+# =============================
+# sklearn compatibility patch
+# =============================
+from sklearn.impute import SimpleImputer
+
+if not hasattr(SimpleImputer, "_fill_dtype"):
+    SimpleImputer._fill_dtype = None
+
 # Professional Icons (Unicode alternatives to emojis)
 ICONS = {
-    'movie': '🎬',  # Can be replaced with ▶️ or ◉
-    'target': '🎯',  # Can be replaced with ⦿ or ●
-    'chart': '📊',  # Can be replaced with ▣ or ▤
-    'money': '💰',  # Can be replaced with $ or ▣
-    'rocket': '🚀',  # Can be replaced with ▲ or ►
-    'people': '👥',  # Can be replaced with ⚘ or ◈
-    'calendar': '📅',  # Can be replaced with ▣ or ◈
-    'star': '⭐',  # Can be replaced with ★ or ◆
-    'time': '⏱️',  # Can be replaced with ◷ or ◐
-    'genre': '🎭',  # Can be replaced with ◈ or ♦
-    'success': '✅',  # Can be replaced with ✓ or ◯
-    'warning': '⚠️',  # Can be replaced with ▲ or !
-    'error': '❌',  # Can be replaced with ✗ or ◯
-    'info': 'ℹ️',  # Can be replaced with i or ◈
-    'search': '🔍',  # Can be replaced with ◎ or ◉
-    'robot': '🤖'   # Can be replaced with ◎ or ⚡
+    'movie': '🎬',
+    'target': '🎯',
+    'chart': '📊',
+    'money': '💰',
+    'rocket': '🚀',
+    'people': '👥',
+    'calendar': '📅',
+    'star': '⭐',
+    'time': '⏱️',
+    'genre': '🎭',
+    'success': '✅',
+    'warning': '⚠️',
+    'error': '❌',
+    'info': 'ℹ️',
+    'search': '🔍',
+    'robot': '🤖'
 }
 
 # Configure page with professional settings
@@ -880,7 +887,7 @@ def main():
     
     with col1:
         st.markdown("""
-        **🤖 AI Technology**  
+        **🤖 Technology**  
         - Ensemble ML Model (RF + XGBoost + LightGBM)  
         - 88.4% Prediction Accuracy  
         - Trained on 13,000+ Movies  
@@ -908,9 +915,9 @@ def main():
     # Professional footer
     st.markdown("""
     <div class="footer">
-        <p><strong>Revenue Analytics Platform v2.0</strong><br>
-        Professional AI-Powered Business Intelligence for Entertainment Industry<br>
-        <small>© 2025 Project By Group 16</small></p>
+        <p><strong>Movie Revenue Analytics Platform</strong><br>
+        Professional Business Intelligence for Entertainment Industry<br>
+        <small>TRYMORE MHLANGA PROJECT</small></p>
     </div>
     """, unsafe_allow_html=True)
 
