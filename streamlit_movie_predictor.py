@@ -1,176 +1,264 @@
-# ================================
-# STREAMLIT MOVIE REVENUE ANALYTICS
-# ================================
+# ============================================================
+# Movie Revenue Predictor — Production Streamlit Application
+# ============================================================
 
 import streamlit as st
-import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+import pandas as pd
 import joblib
-import os
-import warnings
+import plotly.graph_objects as go
+from pathlib import Path
 
-warnings.filterwarnings("ignore")
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
 
-# ---------------- PAGE CONFIG ----------------
 st.set_page_config(
-    page_title="Trymore's Movie Revenue Analytics Platform",
+    page_title="Movie Revenue Predictor",
+    page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ---------------- MODEL CLASS ----------------
+# ============================================================
+# GLOBAL STYLING
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+    .main {
+        background-color: #0e1117;
+    }
+    .block-container {
+        padding-top: 2rem;
+    }
+    h1, h2, h3 {
+        font-weight: 700;
+    }
+    .metric-box {
+        background: #161b22;
+        padding: 1.2rem;
+        border-radius: 12px;
+        border: 1px solid #30363d;
+        text-align: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ============================================================
+# MODEL ANALYZER CLASS
+# ============================================================
+
 class TMDBPredictiveAnalyzer:
-    def __init__(self, model_path):
+    def __init__(self, model_path: str):
         loaded = joblib.load(model_path)
+
         self.model = loaded["model"]
         self.preprocessor = loaded["preprocessor"]
         self.feature_names = loaded["feature_names"]
-        self.model_metadata = loaded.get("metadata", {})
+        self.metadata = loaded.get("metadata", {})
 
-    def _prepare_input(
-        self,
-        budget,
-        runtime,
-        vote_average,
-        vote_count,
-        release_month,
-        release_year,
-        primary_genre
-    ):
-        base = pd.DataFrame([{
-            "budget": float(budget),
-            "runtime": int(runtime),
-            "vote_average": float(vote_average),
-            "vote_count": int(vote_count),
-            "release_month": int(release_month),
-            "release_year": int(release_year)
-        }])
+        self._patch_imputers()
 
-        base["budget_log"] = np.log1p(base["budget"])
-        base["vote_score"] = base["vote_average"] * base["vote_count"]
-        base["is_summer_release"] = base["release_month"].isin([5,6,7,8]).astype(int)
-        base["is_holiday_release"] = base["release_month"].isin([11,12]).astype(int)
-        base["release_quarter"] = ((base["release_month"] - 1) // 3 + 1).astype(int)
+    def _patch_imputers(self):
+        """
+        Backward compatibility patch for sklearn >=1.7
+        Fixes SimpleImputer deserialization errors.
+        """
+        from sklearn.impute import SimpleImputer
+        from sklearn.pipeline import Pipeline
+        from sklearn.compose import ColumnTransformer
 
-        X = pd.DataFrame(0.0, columns=self.feature_names, index=[0])
+        def patch(obj):
+            if isinstance(obj, SimpleImputer):
+                if not hasattr(obj, "_fill_dtype"):
+                    obj._fill_dtype = None
 
-        for col in base.columns:
-            if col in X.columns:
-                X[col] = base[col].astype(float)
+        if isinstance(self.model, Pipeline):
+            for _, step in self.model.steps:
+                patch(step)
 
-        genre_col = f"genre_{primary_genre}"
-        if genre_col in X.columns:
-            X[genre_col] = 1.0
+        if isinstance(self.preprocessor, ColumnTransformer):
+            for _, transformer, _ in self.preprocessor.transformers_:
+                if isinstance(transformer, Pipeline):
+                    for _, step in transformer.steps:
+                        patch(step)
+                else:
+                    patch(transformer)
 
-        return X
-
-    def predict_revenue(self, **params):
-        X = self._prepare_input(**params)
+    def predict_revenue(self, **features) -> float:
+        X = pd.DataFrame([features], columns=self.feature_names)
         log_pred = self.model.predict(X)[0]
         return float(np.expm1(log_pred))
 
-    def analyze_roi(self, **params):
-        revenue = self.predict_revenue(**params)
-        budget = float(params["budget"])
-
+    def analyze_roi(self, budget: float, **features) -> dict:
+        revenue = self.predict_revenue(**features)
         profit = revenue - budget
         roi = (profit / budget) * 100 if budget > 0 else 0
 
         return {
-            "predicted_revenue": revenue,
-            "investment": budget,
+            "revenue": revenue,
             "profit": profit,
-            "roi_percentage": roi,
-            "profit_margin": (profit / revenue) * 100 if revenue > 0 else 0,
-            "risk_level": "Low" if roi > 50 else "Medium" if roi > 0 else "High",
-            "risk_factors": [],
-            "breakeven_multiplier": revenue / budget if budget > 0 else 0,
-            "confidence_score": min(100, params["vote_average"] * 10)
+            "roi": roi
         }
 
-    # -------- FIXED & REQUIRED METHOD --------
-    def optimize_release_timing(
-        self,
-        budget,
-        runtime,
-        vote_average,
-        vote_count,
-        release_year,
-        primary_genre
-    ):
-        monthly = {}
+# ============================================================
+# LOAD MODEL (SAFE)
+# ============================================================
 
-        for m in range(1, 13):
-            params = dict(
-                budget=budget,
-                runtime=runtime,
-                vote_average=vote_average,
-                vote_count=vote_count,
-                release_year=release_year,
-                release_month=m,
-                primary_genre=primary_genre
-            )
+MODEL_PATH = Path("model/movie_revenue_model.pkl")
 
-            result = self.analyze_roi(**params)
-            monthly[m] = result
-
-        best_month = max(monthly, key=lambda m: monthly[m]["roi_percentage"])
-
-        return {
-            "best_month": best_month,
-            "best_roi": monthly[best_month]["roi_percentage"],
-            "monthly_analysis": monthly,
-            "seasonal_insights": {
-                "best_season": "Summer" if best_month in [6,7,8] else "Other",
-                "seasonal_averages": {
-                    "Q1": np.mean([monthly[m]["roi_percentage"] for m in [1,2,3]]),
-                    "Q2": np.mean([monthly[m]["roi_percentage"] for m in [4,5,6]]),
-                    "Q3": np.mean([monthly[m]["roi_percentage"] for m in [7,8,9]]),
-                    "Q4": np.mean([monthly[m]["roi_percentage"] for m in [10,11,12]])
-                }
-            }
-        }
-
-# ---------------- LOAD MODEL ----------------
-@st.cache_resource
+@st.cache_resource(show_spinner=True)
 def load_analyzer():
-    return TMDBPredictiveAnalyzer("models/tmdb_analyzer.pkl")
+    return TMDBPredictiveAnalyzer(MODEL_PATH)
 
 analyzer = load_analyzer()
 
-# ---------------- SIDEBAR ----------------
-st.sidebar.header("Movie Configuration")
+# ============================================================
+# SIDEBAR INPUTS
+# ============================================================
 
-params = {
-    "budget": st.sidebar.slider("Budget", 100_000, 300_000_000, 50_000_000, step=1_000_000),
-    "runtime": st.sidebar.slider("Runtime (minutes)", 60, 240, 120),
-    "vote_average": st.sidebar.slider("TMDB Rating", 1.0, 10.0, 7.0, 0.1),
-    "vote_count": st.sidebar.slider("Vote Count", 100, 10_000, 2_000, 100),
-    "primary_genre": st.sidebar.selectbox(
-        "Genre",
-        ["Action","Adventure","Animation","Comedy","Crime","Drama",
-         "Fantasy","Horror","Romance","Thriller"]
-    ),
-    "release_month": st.sidebar.selectbox("Release Month", list(range(1,13)), index=6),
-    "release_year": st.sidebar.number_input("Release Year", 2024, 2030, 2024)
+st.sidebar.title("🎬 Movie Parameters")
+
+budget = st.sidebar.number_input(
+    "Production Budget (USD)",
+    min_value=1_000_000,
+    max_value=500_000_000,
+    value=50_000_000,
+    step=1_000_000
+)
+
+runtime = st.sidebar.slider("Runtime (minutes)", 60, 240, 120)
+popularity = st.sidebar.slider("Popularity Index", 0.0, 100.0, 40.0)
+vote_average = st.sidebar.slider("Average Rating", 0.0, 10.0, 6.5)
+vote_count = st.sidebar.number_input("Vote Count", 100, 500_000, 15_000)
+
+release_month = st.sidebar.selectbox(
+    "Release Month",
+    list(range(1, 13)),
+    index=5
+)
+
+is_holiday_release = st.sidebar.radio(
+    "Holiday Release",
+    ["No", "Yes"],
+    horizontal=True
+)
+
+# ============================================================
+# FEATURE DICTIONARY (MUST MATCH TRAINING)
+# ============================================================
+
+features = {
+    "budget": budget,
+    "runtime": runtime,
+    "popularity": popularity,
+    "vote_average": vote_average,
+    "vote_count": vote_count,
+    "release_month": release_month,
+    "holiday_release": 1 if is_holiday_release == "Yes" else 0
 }
 
-# ---------------- MAIN ----------------
-st.title("Movie Revenue Analytics Platform")
+# ============================================================
+# MAIN DASHBOARD
+# ============================================================
 
-if st.sidebar.button("Run Analysis"):
-    analysis = analyzer.analyze_roi(**params)
-    timing = analyzer.optimize_release_timing(
-        budget=params["budget"],
-        runtime=params["runtime"],
-        vote_average=params["vote_average"],
-        vote_count=params["vote_count"],
-        release_year=params["release_year"],
-        primary_genre=params["primary_genre"]
+st.title("🎥 Movie Revenue Prediction Dashboard")
+st.caption("AI-driven box office forecasting and ROI analysis")
+
+st.markdown("---")
+
+# ============================================================
+# RUN ANALYSIS
+# ============================================================
+
+analysis = analyzer.analyze_roi(budget=budget, **features)
+
+# ============================================================
+# KPI METRICS
+# ============================================================
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown(
+        f"""
+        <div class="metric-box">
+            <h3>Predicted Revenue</h3>
+            <h2>${analysis['revenue']:,.0f}</h2>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
-    st.metric("Predicted Revenue", f"${analysis['predicted_revenue']:,.0f}")
-    st.metric("ROI", f"{analysis['roi_percentage']:.1f}%")
-    st.metric("Best Release Month", timing["best_month"])
+with col2:
+    st.markdown(
+        f"""
+        <div class="metric-box">
+            <h3>Expected Profit</h3>
+            <h2>${analysis['profit']:,.0f}</h2>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col3:
+    st.markdown(
+        f"""
+        <div class="metric-box">
+            <h3>ROI</h3>
+            <h2>{analysis['roi']:.1f}%</h2>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# ============================================================
+# VISUAL ANALYSIS
+# ============================================================
+
+st.markdown("### 📊 Budget vs Predicted Revenue")
+
+fig = go.Figure()
+
+fig.add_bar(
+    x=["Budget", "Predicted Revenue"],
+    y=[budget, analysis["revenue"]],
+)
+
+fig.update_layout(
+    height=420,
+    template="plotly_dark",
+    yaxis_title="USD",
+    xaxis_title="",
+    showlegend=False
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ============================================================
+# INTERPRETATION
+# ============================================================
+
+st.markdown("### 🧠 Model Interpretation")
+
+if analysis["roi"] > 50:
+    verdict = "High-potential investment with strong upside."
+elif analysis["roi"] > 0:
+    verdict = "Moderate return expected; marketing execution is critical."
+else:
+    verdict = "High financial risk; budget optimization advised."
+
+st.info(verdict)
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.markdown("---")
+st.caption(
+    "Developed by Trymore Mhlanga | Machine Learning • Predictive Analytics • Streamlit"
+)
