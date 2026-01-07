@@ -10,7 +10,7 @@ Experience the interactive app online:
 - Scenario comparison across genres, budgets, and release dates  
 - Dynamic ROI and risk evaluation  
 
-[Deployement App](https://prediction-of-movie-revenue-bymhlanga.streamlit.app/)
+[Deployement App](https://prediction-of-movie-revenue-bymhlanga.streamlit.ap)
 
 ---
 
